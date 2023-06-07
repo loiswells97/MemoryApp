@@ -8,25 +8,34 @@ var sample = require( '@stdlib/random-sample' )
 
 const TestScreen = () => {
 
-  const [questions, setQuestions] = useState()
+  const [questions, setQuestions] = useState([])
   const [questionIndex, setQuestionIndex] = useState(0)
   const [answer, setAnswer] = useState('')
   const [score, setScore] = useState(0)
   const [lastAnswerCorrect, setLastAnswerCorrect] = useState(null)
+  const [started, setStarted] = useState(false)
   const [finished, setFinished] = useState(false)
 
   const cleanAnswer = (answer) => {
     return answer.replace(/[^\w\s\']|_/g, "").replace('\'', "").replace(/\s+/g, " ").trim().toLowerCase()
   }
 
-  const chooseQuestions = async () => {
-    const allQuestionKeys = await AsyncStorage.getAllKeys()
-    const allQuestions = (await AsyncStorage.multiGet(allQuestionKeys)).map((data) => ({...JSON.parse(data[1])}))
-    const keysToSample = allQuestionKeys.map((questionKey, index) => (
-      Array(questionTestingStrength(allQuestions[index])).fill(questionKey)
-    )).flat()
-    console.log(keysToSample)
-    const questionKeys = sample(keysToSample, {size: 5, replace: false})
+  const chooseQuestions = async (quizType) => {
+    const allQuestionKeys = (await AsyncStorage.getAllKeys()).sort((a, b) => {
+      return a.match(/\d+/) - b.match(/\d+/);
+    })
+
+    let questionKeys
+
+    if (quizType === "full") {
+      questionKeys = allQuestionKeys
+    } else if (quizType === "random") {
+      const allQuestions = (await AsyncStorage.multiGet(allQuestionKeys)).map((data) => ({...JSON.parse(data[1])}))
+      const keysToSample = allQuestionKeys.map((questionKey, index) => (
+        Array(questionTestingStrength(allQuestions[index])).fill(questionKey)
+      )).flat()
+      questionKeys = sample(keysToSample, {size: 10, replace: false})
+    }
     console.log(questionKeys)
     const response = await AsyncStorage.multiGet(questionKeys)
     const questionData = response.map((data) => (
@@ -60,23 +69,24 @@ const TestScreen = () => {
   const goToNextQuestion = () => {
     setAnswer('')
     setLastAnswerCorrect(null)
-    if (questionIndex<4) {
+    if (questionIndex<questions.length-1) {
       setQuestionIndex(questionIndex+1)
     } else {
       setFinished(true)
     }
   }
 
-  const startQuiz = () => {
-    chooseQuestions()
+  const startQuiz = (quizType) => {
+    chooseQuestions(quizType)
     setScore(0)
     setQuestionIndex(0)
+    setStarted(true)
     setFinished(false)
   }
 
-  useEffect(() => {
-    startQuiz()
-  }, [])
+  // useEffect(() => {
+  //   startQuiz()
+  // }, [])
 
   useEffect(() => {
     if (lastAnswerCorrect) {
@@ -86,13 +96,24 @@ const TestScreen = () => {
 
   return (
     <View style={styles.container}>
-      {!finished ?
+      {!started ?
+        <>
+          <Text style={styles.heading}>Time for a test 📝</Text>
+          <Text>Choose type of test:</Text>
+          <Button onPress={() => startQuiz("full")} title="Full run through"/>
+          <Button onPress={() => startQuiz("random")} title="Random selection"/>
+        </>
+      :
+      !finished ?
       <>
         {lastAnswerCorrect == null ? 
         <>
           <Text style={styles.heading}>Question {questionIndex +1}</Text>
-          <Text>Score: {score}/5</Text>
-          {questions ? <Text>{questions[questionIndex].question}</Text> : null}
+          {questions.length > 0 ?
+          <>
+            <Text>Score: {score}/{questions.length}</Text>
+            <Text>{questions[questionIndex].question}</Text>
+          </> : null}
           <Text>Answer</Text>
           <TextInput value={answer} onChangeText={setAnswer} multiline style={styles.input}/>
           <Button onPress={checkAnswer} title='Check'/>
@@ -100,7 +121,7 @@ const TestScreen = () => {
         :
           <>
             {lastAnswerCorrect ? <Text style={styles.heading}>✅ Correct</Text> : <Text style={styles.heading}>❌ Incorrect</Text>}
-            <Text>Score: {score}/5</Text>
+            <Text>Score: {score}/{questions.length}</Text>
             <Text style={styles.question}>{questions[questionIndex].question}</Text>
             {!lastAnswerCorrect ?
               <>
@@ -117,8 +138,8 @@ const TestScreen = () => {
       </>
     :
       <>
-        <Text style={styles.heading}> You scored {score}/5</Text>
-        <Button onPress={startQuiz} title='🔁 Try Again'/>
+        <Text style={styles.heading}> You scored {score}/{questions.length}</Text>
+        <Button onPress={() => setStarted(false)} title='🔁 Restart'/>
       </>
     }
       
